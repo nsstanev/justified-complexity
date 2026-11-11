@@ -47,14 +47,16 @@ dotnet run --project src -- race
 Typical output:
 
 ```text
-POST /naive/users  20 concurrent signups for dana@acme.example: 18 x 201, 2 x 409
-POST /users        20 concurrent signups for dana@acme.example: 1 x 201, 19 x 409
+POST /naive/users  20 concurrent signups for dana+9acca3dd@acme.example: 18 x 201, 2 x 409
+POST /users        20 concurrent signups for dana+9acca3dd@acme.example: 1 x 201, 19 x 409
 
 Rows per email (GET /stats):
-{"naive":[{"email":"dana@acme.example","rows":18}],"constrained":[{"email":"dana@acme.example","rows":1}]}
+{"naive":[{"email":"dana+9acca3dd@acme.example","rows":18}],"constrained":[{"email":"dana+9acca3dd@acme.example","rows":1}]}
 ```
 
-The naive numbers vary from run to run (anything from a few duplicates to all 20); the constrained ones never do.
+The client makes up a fresh address for every run and uses it for both endpoints, so you can run it again against the same API; `/stats` then lists one line per run.
+
+The naive numbers vary from run to run (anything from a few duplicates to all 20). The constrained ones stay at one 201 and nineteen 409s, as long as every request completes: the address is new, so exactly one insert can commit.
 
 When you're done:
 

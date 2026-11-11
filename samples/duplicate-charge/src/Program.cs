@@ -20,7 +20,12 @@ builder.Services.AddProblemDetails();
 var lockTimeout = TimeSpan.FromSeconds(builder.Configuration.GetValue("Idempotency:LockTimeoutSeconds", 2));
 
 var app = builder.Build();
-app.UseExceptionHandler();
+app.UseExceptionHandler(new ExceptionHandlerOptions
+{
+    // In Development, minimal APIs throw BadHttpRequestException for a body they cannot bind
+    // (in Production they just answer 400). Without this, the handler would turn it into a 500.
+    StatusCodeSelector = ex => ex is BadHttpRequestException bad ? bad.StatusCode : StatusCodes.Status500InternalServerError,
+});
 app.UseStatusCodePages();
 
 // A fresh schema on every start keeps the demo repeatable. Real projects use migrations.
