@@ -24,7 +24,8 @@ public sealed class PlaceOrderValidator : AbstractValidator<PlaceOrder>
     {
         RuleFor(x => x.CustomerId).NotEmpty();
         RuleFor(x => x.Lines).NotEmpty();
-        RuleForEach(x => x.Lines).ChildRules(line =>
+        // Child rules skip a null element, so a line that is null has to be refused by name.
+        RuleForEach(x => x.Lines).NotNull().ChildRules(line =>
         {
             line.RuleFor(l => l.Sku).NotEmpty();
             line.RuleFor(l => l.Quantity).GreaterThan(0);

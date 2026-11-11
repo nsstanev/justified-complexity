@@ -55,6 +55,17 @@ app.MapPost("/plain/orders", async (PlaceOrderBody body, PlaceOrderHandler handl
 app.MapPost("/orders", async (PlaceOrderBody body, IHandler<PlaceOrder, OrderPlaced> handler, CancellationToken ct) =>
     Created(await handler.HandleAsync(ToCommand(Sources.Decorated, body), ct)));
 
+// Where the Location header of a created order points.
+app.MapGet("/orders/{id:guid}", async (Guid id, AppDb db, CancellationToken ct) =>
+{
+    var order = await db.Orders
+        .Where(o => o.Id == id)
+        .Select(o => new { o.Id, o.CustomerId, Lines = o.Lines.Select(l => new { l.Sku, l.Quantity }) })
+        .FirstOrDefaultAsync(ct);
+
+    return order is null ? Results.NotFound() : Results.Ok(order);
+});
+
 // What each endpoint left in the database.
 app.MapGet("/stats", async (AppDb db, CancellationToken ct) =>
 {
