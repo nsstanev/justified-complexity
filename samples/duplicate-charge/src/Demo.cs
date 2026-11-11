@@ -23,15 +23,16 @@ public static class Demo
         codes = await Task.WhenAll(Enumerable.Range(0, Retries).Select(_ => PayAsync(http, "/payments", "order-1002", 49.90m, key)));
         Console.WriteLine($"   POST /payments        {Summary(codes)}");
         Console.WriteLine($"   retry after it finished: {await PayAsync(http, "/payments", "order-1002", 49.90m, key)}");
+        Console.WriteLine($"   same amount sent as 49.9: {await PayAsync(http, "/payments", "order-1002", 49.9m, key)}");
 
         Console.WriteLine();
         Console.WriteLine("3. The same key with a different amount");
         Console.WriteLine($"   POST /payments        {await PayAsync(http, "/payments", "order-1002", 499.00m, key)}");
 
         Console.WriteLine();
-        Console.WriteLine("4. The API crashes after the card is charged, before the payment is saved");
+        Console.WriteLine("4. The request fails after the card is charged, before the payment is saved");
         key = Guid.NewGuid().ToString();
-        Console.WriteLine($"   first attempt:        {await PayAsync(http, "/payments", "order-1003", 49.90m, key, crash: true)}");
+        Console.WriteLine($"   first attempt:        {await PayAsync(http, "/payments", "order-1003", 49.90m, key, fail: true)}");
         Console.WriteLine($"   immediate retry:      {await PayAsync(http, "/payments", "order-1003", 49.90m, key)}");
         await Task.Delay(2500); // the demo's lock timeout is 2 seconds
         Console.WriteLine($"   retry after 2.5 s:    {await PayAsync(http, "/payments", "order-1003", 49.90m, key)}");
@@ -46,9 +47,9 @@ public static class Demo
 
     private sealed record StatsRow(string OrderId, int PaymentRows, int ProviderCharges, decimal TotalCharged);
 
-    private static async Task<string> PayAsync(HttpClient http, string path, string orderId, decimal amount, string? key, bool crash = false)
+    private static async Task<string> PayAsync(HttpClient http, string path, string orderId, decimal amount, string? key, bool fail = false)
     {
-        using var message = new HttpRequestMessage(HttpMethod.Post, $"{path}?delayMs={DelayMs}{(crash ? "&crashAfterCharge=true" : "")}")
+        using var message = new HttpRequestMessage(HttpMethod.Post, $"{path}?delayMs={DelayMs}{(fail ? "&failAfterCharge=true" : "")}")
         {
             Content = JsonContent.Create(new PaymentRequest(orderId, amount)),
         };

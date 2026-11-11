@@ -5,6 +5,8 @@ namespace DuplicateCharge;
 
 // Stands in for the payment provider. It commits each charge on its own connection,
 // so a charge survives even when the API request that asked for it fails afterwards.
+// It models one outcome only: the charge succeeds. It never declines, never fails halfway,
+// and never forgets a key. A real provider does all three; see the README.
 public sealed class FakePaymentProvider(IDbContextFactory<AppDb> factory)
 {
     public async Task<string> ChargeAsync(string orderId, decimal amount, string? idempotencyKey, int delayMs, CancellationToken ct)

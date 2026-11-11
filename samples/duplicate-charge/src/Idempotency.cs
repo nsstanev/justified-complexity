@@ -1,5 +1,5 @@
 using System.Security.Cryptography;
-using System.Text.Json;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 
 namespace DuplicateCharge;
@@ -16,9 +16,14 @@ public sealed record Claim(ClaimOutcome Outcome, IdempotencyRecord? Record = nul
 
 public static class IdempotencyStore
 {
-    // Same body, same hash. A key that arrives with a different hash is a client bug, not a retry.
+    // The fingerprint defines "the same request": the same order and the same amount of money.
+    // It is built from the validated values, not from the raw body, so 49.9 and 49.90 match and
+    // whitespace or property order don't matter. A key that arrives with a different fingerprint
+    // is a client bug, not a retry. The "v1" prefix lets the definition change later without
+    // old rows silently matching a new one.
     public static string Hash(PaymentRequest request) =>
-        Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(request)));
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+            $"v1\n{request.OrderId}\n{PaymentRules.MinorUnits(request.Amount)}")));
 
     public static async Task<Claim> ClaimAsync(AppDb db, string key, string hash, TimeSpan lockTimeout, CancellationToken ct)
     {

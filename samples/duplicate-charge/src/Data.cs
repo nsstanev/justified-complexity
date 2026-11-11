@@ -4,6 +4,30 @@ namespace DuplicateCharge;
 
 public sealed record PaymentRequest(string OrderId, decimal Amount);
 
+// What this API accepts as a payment, checked before a key is claimed.
+// The sample has one currency with two decimal places (think EUR), so an amount is a whole number of cents.
+public static class PaymentRules
+{
+    public static Dictionary<string, string[]> Validate(PaymentRequest request)
+    {
+        var errors = new Dictionary<string, string[]>();
+        if (string.IsNullOrWhiteSpace(request.OrderId) || request.OrderId.Length > 64)
+        {
+            errors["orderId"] = ["'orderId' is required, at most 64 characters."];
+        }
+
+        if (request.Amount <= 0 || request.Amount > 1_000_000 || decimal.Round(request.Amount, 2) != request.Amount)
+        {
+            errors["amount"] = ["'amount' must be greater than zero, with at most two decimal places."];
+        }
+
+        return errors;
+    }
+
+    // 49.9 and 49.90 are the same money: 4990 cents. Call only after Validate.
+    public static long MinorUnits(decimal amount) => (long)(amount * 100);
+}
+
 public sealed record PaymentResponse(Guid PaymentId, string OrderId, decimal Amount, string ProviderChargeId);
 
 // The API's own record of a payment.

@@ -39,6 +39,12 @@ using (var scope = app.Services.CreateScope())
 // Option 1: every request charges the card. A retry is a second charge.
 app.MapPost("/naive/payments", async (PaymentRequest request, int? delayMs, FakePaymentProvider provider, AppDb db, CancellationToken ct) =>
 {
+    var invalid = PaymentRules.Validate(request);
+    if (invalid.Count > 0)
+    {
+        return Results.ValidationProblem(invalid);
+    }
+
     var chargeId = await provider.ChargeAsync(request.OrderId, request.Amount, idempotencyKey: null, delayMs ?? 0, ct);
 
     var payment = new Payment { Id = Guid.CreateVersion7(), OrderId = request.OrderId, Amount = request.Amount, ProviderChargeId = chargeId };
@@ -49,16 +55,31 @@ app.MapPost("/naive/payments", async (PaymentRequest request, int? delayMs, Fake
 });
 
 // Option 2: the client names the operation with an Idempotency-Key, and the key travels all the way to the provider.
-app.MapPost("/payments", async (PaymentRequest request, int? delayMs, bool? crashAfterCharge, HttpContext http, FakePaymentProvider provider, AppDb db, CancellationToken ct) =>
+app.MapPost("/payments", async (PaymentRequest request, int? delayMs, bool? failAfterCharge, HttpContext http, FakePaymentProvider provider, AppDb db, CancellationToken ct) =>
 {
-    var key = http.Request.Headers["Idempotency-Key"].ToString();
-    if (string.IsNullOrWhiteSpace(key) || key.Length > 255)
+    // This API's convention for the key: exactly one header, 1 to 255 characters, sent bare (as Stripe
+    // accepts it) or as a quoted string (as the IETF draft writes it). Both forms name the same key.
+    var headers = http.Request.Headers["Idempotency-Key"];
+    var key = headers.Count == 1 ? headers[0]!.Trim() : "";
+    if (key.Length >= 2 && key[0] == '"' && key[^1] == '"')
+    {
+        key = key[1..^1];
+    }
+
+    if (key.Length is 0 or > 255)
     {
         return Results.Problem(
             type: "https://errors.acme.example/idempotency-key-required",
-            title: "Idempotency-Key header is required",
-            detail: "Send a unique value, such as a UUID, and repeat it on every retry of the same payment.",
+            title: "Exactly one Idempotency-Key header is required",
+            detail: "Send a unique value of at most 255 characters, such as a UUID, and repeat it on every retry of the same payment.",
             statusCode: StatusCodes.Status400BadRequest);
+    }
+
+    // Validation comes before the claim, so a request the contract rejects never uses up a key.
+    var invalid = PaymentRules.Validate(request);
+    if (invalid.Count > 0)
+    {
+        return Results.ValidationProblem(invalid);
     }
 
     // 1. Claim the key. Exactly one request gets to do the work.
@@ -83,13 +104,17 @@ app.MapPost("/payments", async (PaymentRequest request, int? delayMs, bool? cras
                 statusCode: StatusCodes.Status422UnprocessableEntity);
     }
 
-    // 2. Charge the card, passing the same key on. If this request dies after this line,
-    //    the retry reaches the provider with the same key and gets the same charge back.
-    var chargeId = await provider.ChargeAsync(request.OrderId, request.Amount, key, delayMs ?? 0, ct);
+    // 2. Charge the card, passing a key derived from the client's key. If this request dies after
+    //    this line, the retry reaches the provider with the same key and gets the same charge back.
+    //    The provider account is shared by every caller of this API, so the downstream key names the
+    //    operation as well as the client's key. A multi-tenant API adds the tenant: "{tenant}/payments/{key}".
+    var providerKey = $"payments/{key}";
+    var chargeId = await provider.ChargeAsync(request.OrderId, request.Amount, providerKey, delayMs ?? 0, ct);
 
-    if (crashAfterCharge == true)
+    if (failAfterCharge == true)
     {
-        throw new InvalidOperationException("Simulated crash: the card is charged, the payment is not saved.");
+        // The request fails; the process stays up. It exercises the same window as a real crash.
+        throw new InvalidOperationException("Simulated failure: the card is charged, the payment is not saved.");
     }
 
     // 3. Save the payment and the response in one transaction (a single SaveChanges).
