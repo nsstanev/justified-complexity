@@ -13,8 +13,11 @@ public static class Race
         using var http = new HttpClient { BaseAddress = new Uri(baseUrl) };
 
         await WaitForApiAsync(http);
-        await RunOneAsync(http, "/naive/users", "dana@acme.example");
-        await RunOneAsync(http, "/users", "dana@acme.example");
+        // A fresh address for every run, shared by both endpoints, so the client can be rerun
+        // against a running API. With a fixed address the second run would only see conflicts.
+        var email = $"dana+{Guid.NewGuid().ToString("N")[..8]}@acme.example";
+        await RunOneAsync(http, "/naive/users", email);
+        await RunOneAsync(http, "/users", email);
 
         Console.WriteLine();
         Console.WriteLine("Rows per email (GET /stats):");

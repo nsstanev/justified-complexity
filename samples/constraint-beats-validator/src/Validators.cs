@@ -19,15 +19,19 @@ public sealed class NaiveSignupValidator : AbstractValidator<Signup>
 
     public NaiveSignupValidator(AppDb db)
     {
-        Include(new SignupShapeValidator());
-
-        RuleFor(x => x.Email)
-            .MustAsync(async (email, ct) =>
+        // The lookup is a dependent rule: it runs only when the shape rules pass,
+        // so a missing or malformed email never reaches the database.
+        RuleFor(x => x.Email).NotEmpty().EmailAddress().MaximumLength(254)
+            .DependentRules(() =>
             {
-                var normalized = Email.Normalize(email);
-                return !await db.NaiveUsers.AnyAsync(u => u.Email == normalized, ct);
-            })
-            .WithErrorCode(TakenCode)
-            .WithMessage("This email is already registered.");
+                RuleFor(x => x.Email)
+                    .MustAsync(async (email, ct) =>
+                    {
+                        var normalized = Email.Normalize(email);
+                        return !await db.NaiveUsers.AnyAsync(u => u.Email == normalized, ct);
+                    })
+                    .WithErrorCode(TakenCode)
+                    .WithMessage("This email is already registered.");
+            });
     }
 }

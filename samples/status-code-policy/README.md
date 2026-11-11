@@ -80,7 +80,11 @@ dotnet run --project src
 ## Notes
 
 - The closed domains are a setting, `Signup:ClosedDomains` in `src/appsettings.json`.
-- Broken JSON and unknown routes never reach the endpoint. `UseExceptionHandler` and `UseStatusCodePages` in `Program.cs` give those failures a Problem Details body as well.
+- Broken JSON and unknown routes never reach the endpoint. `UseExceptionHandler` and `UseStatusCodePages` in `Program.cs` give those failures a Problem Details body as well, when the client accepts JSON. A client that sends `Accept: text/html` gets a plain-text line instead.
+- Broken JSON is a 400 in every environment. In Development, minimal APIs throw `BadHttpRequestException` for a body they cannot bind, and the exception handler would report it as a 500; the `StatusCodeSelector` in `Program.cs` keeps the exception's own status.
+- The endpoint checks the closed-domain rule (422) before the insert that can produce the 409. A request that fails both ways gets the 422. That precedence is this sample's choice; the three questions classify a failure, they don't order the checks.
+- The email syntax this API accepts is defined in `Email.HasAcceptedSyntax` (`src/Data.cs`): one `@`, no whitespace, a dot in the domain. It is stricter than FluentValidation's `EmailAddress()`, which only looks for an `@`; the domain rule depends on it.
+- Lower-casing the whole address is this application's policy for account identifiers, not a rule of email.
 - The 409 comes from the unique index `ix_users_email`, not from a lookup. The [constraint-beats-validator](../constraint-beats-validator) sample shows why.
 - The schema is dropped and recreated on every start (`EnsureDeleted` / `EnsureCreated`) so the demo is repeatable. Use migrations in a real project.
 - EF Core logs each unique violation at Error level even though the endpoint handles it. Filter the `Microsoft.EntityFrameworkCore.Update` category if that noise matters to you.

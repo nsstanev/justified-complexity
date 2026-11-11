@@ -18,7 +18,9 @@ public sealed class User
 
 public static class Email
 {
-    // One place decides what "the same email" means, before it reaches the database.
+    // This application's policy, not a rule of email: addresses are case-insensitive account
+    // identifiers. One place trims surrounding whitespace and lower-cases the value that is
+    // stored and compared. Keep the address as entered in a second column if you deliver to it.
     public static string Normalize(string email) => email.Trim().ToLowerInvariant();
 }
 
