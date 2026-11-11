@@ -9,6 +9,7 @@ A minimal ASP.NET Core API (.NET 10, EF Core, Npgsql, FluentValidation) with Pos
 | `POST /mediatr/orders` | `ISender.Send`, MediatR 12.5.0 | Three pipeline behaviors (`src/Behaviors.cs`) |
 | `POST /plain/orders` | The handler is injected and called directly | None. They left with the pipeline |
 | `POST /orders` | `IHandler<PlaceOrder, OrderPlaced>` is injected | Three decorators (`src/Handlers.cs`) |
+| `GET /orders/{id}` | | The saved order, where the `Location` header of a 201 points |
 | `GET /stats` | | Orders saved and widgets in stock, per endpoint |
 
 Placing an order does two writes: it saves the order, then reserves stock for each line. Each endpoint has its own shelf with ten widgets and no gadgets.
@@ -44,6 +45,12 @@ What each endpoint left behind (GET /stats). Each started with 10 widgets and no
    mediatr    0 order(s) saved, 10 widgets in stock
    plain      2 order(s) saved, 14 widgets in stock
    decorated  0 order(s) saved, 10 widgets in stock
+```
+
+The client checks these answers. If a status or a count differs, it lists the difference and exits with code 1. The counts are for a fresh database, and the database is reset only when the API starts, so restart the API before running the client again:
+
+```bash
+docker compose restart api
 ```
 
 What happened on the plain endpoint:
@@ -98,6 +105,8 @@ dotnet run --project src -- demo
 - **MediatR version.** The sample pins MediatR 12.5.0, the last release under the Apache-2.0 licence. Version 13 and later are commercially licensed and log a warning without a licence key.
 - **Registration without a library.** `AddHandler` composes the decorators with a factory lambda, so the sample needs nothing beyond the built-in container. With many handlers, [Scrutor](https://github.com/khellang/Scrutor)'s `Decorate(typeof(IHandler<,>), typeof(LoggingDecorator<,>))` does the same for every handler at once. Its order is the reverse of MediatR's: the last `Decorate` call is the outermost.
 - **Validation runs before the transaction is opened**, so an invalid request never takes a database connection.
+- **A null order line is refused by name.** FluentValidation's child rules skip a null element, so `RuleForEach(x => x.Lines)` has `NotNull()` before `ChildRules`. Without it, `"lines": [null]` passes validation and fails in the handler.
+- **The transaction decorator assumes one top-level command and one `AppDb`.** A decorated handler that calls another decorated handler would begin a second transaction on the same context, and a retrying execution strategy needs the whole transaction inside `CreateExecutionStrategy().ExecuteAsync`.
 - **The out-of-stock check is a single `UPDATE ... WHERE available >= quantity`**, so two orders cannot both take the last widget. A negative quantity passes that check, which is why the unvalidated endpoint adds stock.
 - The schema is dropped and recreated on every start (`EnsureDeleted` / `EnsureCreated`) so the demo is repeatable. Use migrations in a real project.
 - Ports `5083` (API) and `55435` (PostgreSQL) differ from the other samples, so you can run them side by side.
