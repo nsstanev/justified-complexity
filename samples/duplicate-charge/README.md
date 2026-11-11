@@ -35,11 +35,12 @@ Output:
 2. Same retries, with one Idempotency-Key
    POST /payments        1 x 201, 4 x 409
    retry after it finished: 201 (replayed)
+   same amount sent as 49.9: 201 (replayed)
 
 3. The same key with a different amount
    POST /payments        422
 
-4. The API crashes after the card is charged, before the payment is saved
+4. The request fails after the card is charged, before the payment is saved
    first attempt:        500
    immediate retry:      409
    retry after 2.5 s:    201
@@ -84,15 +85,21 @@ dotnet run --project src -- demo
 
 ## How the keyed endpoint works
 
+0. **Check the request first.** Exactly one `Idempotency-Key` header, a non-empty order id and a positive amount with at most two decimals. A request that fails here gets a 400 and never uses up a key.
 1. **Claim the key** (`src/Idempotency.cs`). One `INSERT ... ON CONFLICT` statement on the `idempotency_keys` table decides which request owns the key. The others see why they lost: the work is done (replay the stored response), still running (409), or the key belongs to a different request body (422). A missing key is a 400.
-2. **Charge the card, passing the same key to the provider.** If the API dies after the charge, the retry reaches the provider with the same key and gets the original charge back.
+2. **Charge the card, passing a key derived from the client's key to the provider** (`payments/{key}`). If the request dies after the charge, the retry reaches the provider with the same key and gets the original charge back.
 3. **Save the payment and the response in one transaction.** A unique index on `payments.idempotency_key` is the final guard if two workers ever finish the same key.
 
 ## Notes
 
 - `Idempotency:LockTimeoutSeconds` in `src/appsettings.json` is how long a request may hold a key before a retry can take it over. The demo uses 2 seconds so step 4 is quick to watch. In a real system make it longer than your slowest request.
-- `?delayMs=300` makes the fake provider slow enough for the retries to overlap. `?crashAfterCharge=true` throws after the charge and before the payment is saved.
+- `?delayMs=300` makes the fake provider slow enough for the retries to overlap. `?failAfterCharge=true` throws after the charge and before the payment is saved.
+- Step 4 fails the request; it does not kill the process. It exercises the same window as a crash (charged, not saved), but the sample cannot show recovery after a real restart: the schema, including the fake provider's charges, is recreated on every start.
+- **The key's syntax is this sample's convention.** One header, 1 to 255 characters, bare (`Idempotency-Key: 0f2b...`) or quoted (`Idempotency-Key: "0f2b..."`, the form the IETF draft specifies). Both name the same key. More than one header is a 400.
+- **What "the same request" means.** The stored fingerprint is a hash of the order id and the amount in cents, not of the raw body. `49.9` and `49.90` are the same request; a different order or amount under the same key is a 422. The sample assumes one currency with two decimal places.
+- **What the fake provider does not model.** It always charges successfully and remembers every key forever. A real provider can decline, can fail without telling you whether it charged, and forgets keys after a retention period (Stripe: possibly after 24 hours). A retry that takes over a stale key after that period would charge again, so a real system stops retrying automatically before the provider's window closes and reconciles with the provider instead.
+- The downstream key is `payments/{key}`: the provider account is shared, so the key names the operation too. A multi-tenant API would add the tenant.
 - Keys are never deleted here. A real system removes them after a retention period that its clients know about.
 - The schema is dropped and recreated on every start (`EnsureDeleted` / `EnsureCreated`) so the demo is repeatable. Use migrations in a real project.
-- The 500 in step 4 is logged as an unhandled exception. That is the simulated crash.
+- The 500 in step 4 is logged as an unhandled exception. That is the simulated failure.
 - Ports `5082` (API) and `55434` (PostgreSQL) differ from the other samples, so you can run them side by side.
