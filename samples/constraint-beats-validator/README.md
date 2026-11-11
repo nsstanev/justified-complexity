@@ -1,6 +1,6 @@
 # A database constraint beats an async validator
 
-Companion sample for the article of the same name (*Justified Complexity*, nstanev.com). It also carries the status code policy from the follow-up article, *400 or 422?*; see [Status codes](#status-codes-400-409-or-422).
+Companion sample for the article of the same name (*Justified Complexity*, nstanev.com).
 
 A minimal ASP.NET Core API (.NET 10, EF Core, Npgsql, FluentValidation) with PostgreSQL in Docker. It exposes the same signup twice:
 
@@ -61,32 +61,6 @@ When you're done:
 ```bash
 docker compose --profile race down
 ```
-
-## Status codes: 400, 409 or 422
-
-`POST /users` never picks a status code itself. It returns an error from the catalogue in `src/Errors.cs`, and the catalogue maps each error to one of three codes and a stable Problem Details `type`:
-
-| Request body | Status | `type` (after `https://errors.acme.example/`) | Why |
-| --- | --- | --- | --- |
-| `{"email":"not-an-email"}` | 400 | `validation-failed` | The API contract says the request is wrong |
-| `{"email":"dana@corp.example"}` | 422 | `signup-domain-closed` | A valid request that a business rule refuses |
-| `{"email":"dana@acme.example"}`, sent twice | 201, then 409 | `email-taken` | A valid request that the current state refuses |
-
-With the stack running, try each one:
-
-```bash
-curl -i -X POST http://localhost:5080/users -H "Content-Type: application/json" -d '{"email":"not-an-email"}'
-```
-
-```bash
-curl -i -X POST http://localhost:5080/users -H "Content-Type: application/json" -d '{"email":"dana@corp.example"}'
-```
-
-```bash
-curl -i -X POST http://localhost:5080/users -H "Content-Type: application/json" -d '{"email":"dana@acme.example"}'
-```
-
-The closed domains are a setting, `Signup:ClosedDomains` in `src/appsettings.json`. Broken JSON and unknown routes are answered by the framework, also as Problem Details (`UseExceptionHandler` and `UseStatusCodePages` in `Program.cs`).
 
 ## Notes
 

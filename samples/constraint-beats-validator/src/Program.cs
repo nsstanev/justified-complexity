@@ -16,14 +16,7 @@ builder.Services.AddScoped<NaiveSignupValidator>();
 builder.Services.AddScoped<SignupShapeValidator>();
 builder.Services.AddProblemDetails();
 
-// Domains whose accounts are created another way (for example by the company's own sign-in).
-var closedDomains = builder.Configuration.GetSection("Signup:ClosedDomains").Get<string[]>() ?? [];
-
 var app = builder.Build();
-
-// Failures the endpoints don't produce themselves (broken JSON, unknown routes, bugs) get a Problem Details body too.
-app.UseExceptionHandler();
-app.UseStatusCodePages();
 
 // A fresh schema on every start keeps the demo repeatable. Real projects use migrations.
 using (var scope = app.Services.CreateScope())
@@ -58,20 +51,12 @@ app.MapPost("/users", async (Signup signup, int? delayMs, SignupShapeValidator v
     var result = await validator.ValidateAsync(signup, ct);
     if (!result.IsValid)
     {
-        return Errors.Validation(result.ToDictionary()); // 400: the contract says this request is wrong
-    }
-
-    var email = Email.Normalize(signup.Email);
-    var domain = email[(email.IndexOf('@') + 1)..];
-    if (closedDomains.Contains(domain))
-    {
-        // 422: a valid request that a business rule refuses
-        return Errors.SignupDomainClosed.ToProblem($"Accounts for {domain} are created by the organisation's administrator.");
+        return Results.ValidationProblem(result.ToDictionary());
     }
 
     await Task.Delay(delayMs ?? 0, ct); // same artificial delay as option 1, to keep the comparison fair
 
-    var user = new User { Email = email };
+    var user = new User { Email = Email.Normalize(signup.Email) };
     db.Users.Add(user);
     try
     {
@@ -83,8 +68,10 @@ app.MapPost("/users", async (Signup signup, int? delayMs, SignupShapeValidator v
         ConstraintName: AppDb.UsersEmailIndex
     })
     {
-        // 409: a valid request that the current state of the table refuses
-        return Errors.EmailTaken.ToProblem("An account with this email already exists.");
+        return Results.Problem(
+            title: "Email already registered",
+            detail: "An account with this email already exists.",
+            statusCode: StatusCodes.Status409Conflict);
     }
 
     return Results.Created($"/users/{user.Id}", new { user.Id, user.Email });

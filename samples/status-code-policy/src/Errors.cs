@@ -1,4 +1,4 @@
-namespace ConstraintDemo;
+namespace StatusCodePolicy;
 
 // The whole status code policy: three kinds of failure, three codes.
 public enum ErrorKind
