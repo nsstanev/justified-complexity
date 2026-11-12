@@ -94,9 +94,9 @@ app.MapPut("/invoices/{id:int}", async (int id, InvoiceUpdate update, HttpContex
         }
 
         // Second check: someone can still save between the read above and the write below.
-        // Telling EF Core which version the client edited makes the UPDATE carry "AND xmin = <that version>",
-        // so the database compares in the same statement that writes.
-        db.Entry(invoice).Property(i => i.Version).OriginalValue = version;
+        // Version is mapped as a row version, so EF Core adds "AND xmin = <the version it read>" to the UPDATE,
+        // and the first check has just shown that the version it read is the one the client edited.
+        // The database compares in the same statement that writes.
     }
 
     invoice.Customer = update.Customer;

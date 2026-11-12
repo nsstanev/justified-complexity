@@ -2,7 +2,7 @@
 
 Companion sample for the article of the same name (*Justified Complexity*, nstanev.com).
 
-A minimal ASP.NET Core API (.NET 10, EF Core, Npgsql) with PostgreSQL in Docker. It is a payroll service with two tenants, Acme and Globex, in one `payslips` table. It keeps them apart in three ways, and a small client signs in as Acme and counts the rows it gets that belong to Globex.
+A minimal ASP.NET Core API (.NET 10, EF Core, Npgsql) with PostgreSQL in Docker. It is a payroll service with two tenants, Acme and Globex, in one `payslips` table. It keeps them apart in three ways, and a small client sends Acme's tenant header and counts the rows it gets that belong to Globex.
 
 | Endpoints | How tenants are kept apart | Where it leaks |
 | --- | --- | --- |
