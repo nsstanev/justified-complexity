@@ -87,7 +87,7 @@ dotnet run --project src -- demo
 
 1. **`GET` hands out the version.** The response carries `ETag: "<xmin>"`.
 2. **`PUT` must bring it back.** No `If-Match` header: 428. The API refuses to guess which version the client edited.
-3. **Two checks.** The endpoint compares the client's version with the row it just read, and answers 412 if they differ. Then it sets the client's version as the row version's original value, so the `UPDATE` carries `AND xmin = ...` and the database compares again in the statement that writes.
+3. **Two checks.** The endpoint compares the client's version with the row it just read, and answers 412 if they differ. Then it saves. `Version` is mapped as a row version, so EF Core adds `AND xmin = ...` with the version it read, which the first check has just shown to be the client's, and the database compares again in the statement that writes.
 4. **A 412 is an instruction, not an error to swallow.** The client reads the invoice again, applies its change to the current version and retries, or shows the user what changed.
 
 ## Notes
