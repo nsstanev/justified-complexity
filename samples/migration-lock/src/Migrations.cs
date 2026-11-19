@@ -52,19 +52,38 @@ public sealed class Migrations(NpgsqlDataSource dataSource, ILogger<Migrations> 
     }
 
     // A concurrent build that fails or is cancelled leaves an index behind that is marked invalid:
-    // it costs every write and is used by no query. So check, and never hide it with IF NOT EXISTS.
+    // it costs every write and is used by no query. A build that returns without an error is valid,
+    // so the places to look are after a failure and before a rerun. Never hide it with IF NOT EXISTS.
     private async Task<int> BuildIndexConcurrentlyAsync(CancellationToken ct)
     {
-        await RunOnceAsync("CREATE INDEX CONCURRENTLY ix_invoices_customer_concurrent ON invoices (customer)", ct);
+        const string index = "ix_invoices_customer_concurrent";
 
-        await using var command = dataSource.CreateCommand(
-            "SELECT indisvalid FROM pg_index WHERE indexrelid = 'ix_invoices_customer_concurrent'::regclass");
-        if (await command.ExecuteScalarAsync(ct) is not true)
+        // Left behind by an earlier run that failed.
+        await DropIfInvalidAsync(index, ct);
+
+        try
         {
-            throw new InvalidOperationException("The index was built but is not valid. Drop it and build it again.");
+            await RunOnceAsync($"CREATE INDEX CONCURRENTLY {index} ON invoices (customer)", ct);
+        }
+        catch
+        {
+            // Not the request's token: the cleanup has to run when the build was cancelled, too.
+            await DropIfInvalidAsync(index, CancellationToken.None);
+            throw;
         }
 
         return 1;
+    }
+
+    private async Task DropIfInvalidAsync(string index, CancellationToken ct)
+    {
+        await using var check = dataSource.CreateCommand("SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass(@index)");
+        check.Parameters.AddWithValue("index", index);
+        if (await check.ExecuteScalarAsync(ct) is false)
+        {
+            log.LogWarning("Index {Index} is invalid; dropping it", index);
+            await RunOnceAsync($"DROP INDEX CONCURRENTLY {index}", ct);
+        }
     }
 
     private async Task<int> RunWithLockTimeoutAsync(string sql, CancellationToken ct)

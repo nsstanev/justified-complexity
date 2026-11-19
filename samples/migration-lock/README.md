@@ -100,7 +100,7 @@ dotnet run --project src -- demo
 1. **`ADD COLUMN` behind a long read.** Adding a nullable column takes milliseconds, but it needs the strongest table lock, `ACCESS EXCLUSIVE`. The report holds the weakest one, so the `ALTER TABLE` waits. Every query that arrives after it waits behind it in the lock queue, reads included, until the report ends.
 2. **`lock_timeout` and a retry.** The statement gives up after 300 ms and leaves the queue, so the requests behind it go ahead. It tries again 700 ms later and succeeds once the report is gone.
 3. **`CREATE INDEX`** blocks every write for the whole build. Reads continue.
-4. **`CREATE INDEX CONCURRENTLY`** builds the same index without blocking writes. The sample then checks `pg_index.indisvalid`, because a concurrent build that fails leaves an invalid index behind.
+4. **`CREATE INDEX CONCURRENTLY`** builds the same index without blocking writes. A concurrent build that fails leaves an invalid index behind, so the sample looks at `pg_index.indisvalid` where that can happen: after a failed build and before a new one. It drops an invalid index with `DROP INDEX CONCURRENTLY`.
 5. **`ADD CONSTRAINT ... CHECK`** checks all two million rows while it holds `ACCESS EXCLUSIVE`.
 6. **`NOT VALID`, then `VALIDATE CONSTRAINT`.** The first statement enforces the rule for new rows and returns at once. The second checks the old rows under a lock that lets reads and writes through.
 
@@ -108,7 +108,7 @@ dotnet run --project src -- demo
 
 - **The report is the trigger, not the cause.** Any transaction that has touched the table and is still open has the same effect: a slow query, a forgotten `BEGIN` in a console, a backup.
 - **`lock_timeout` is set with `SET LOCAL`** inside the migration's transaction, so it never leaks to a pooled connection.
-- **Step 4 does not use `lock_timeout`.** A concurrent index build that is interrupted leaves an invalid index, so it is better to let it wait and to check the result.
+- **Step 4 does not use `lock_timeout`.** A concurrent index build that is interrupted leaves an invalid index, so it is better to let it wait, and to clean up if it fails.
 - **Requests that time out in the client are still running on the server**, each holding a database connection until the lock is released. With more traffic than the demo sends, the connection pool runs out as well.
 - **The demo uses raw SQL, not EF Core migrations.** In an EF Core migration the same statements go through `migrationBuilder.Sql(...)`, and `CREATE INDEX CONCURRENTLY` needs `suppressTransaction: true` because it cannot run inside a transaction.
 - The schema is dropped, recreated and reloaded on every start so the demo is repeatable. `Seed:Rows` in `src/appsettings.json` sets the table size.

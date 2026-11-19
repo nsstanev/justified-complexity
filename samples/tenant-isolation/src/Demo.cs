@@ -64,7 +64,15 @@ public static class Demo
         using var request = new HttpRequestMessage(HttpMethod.Get, path);
         if (tenant is not null) request.Headers.Add("X-Tenant", tenant);
         using var response = await http.SendAsync(request);
-        var rows = response.IsSuccessStatusCode ? (await response.Content.ReadFromJsonAsync<List<PayslipRow>>())! : [];
+        // A failed request is not an empty result: without this check an error would pass as "no rows".
+        if (!response.IsSuccessStatusCode)
+        {
+            Console.WriteLine($"   GET  {path.Split('?')[0],-28} failed with {(int)response.StatusCode}");
+            unexpected.Add($"{path}: the request failed with {(int)response.StatusCode}; expected 200");
+            return;
+        }
+
+        var rows = (await response.Content.ReadFromJsonAsync<List<PayslipRow>>())!;
         var foreign = rows.Count(r => r.TenantId != Tenants.Acme);
 
         // With no tenant there is no "own" and "other": count the tenants instead.
